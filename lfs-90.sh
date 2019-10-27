@@ -456,31 +456,198 @@ pushd $LFS/sources
 if tar xf binutils-2.32.tar.xz; then
 	info "Extract binutils-2.32.tar.xz ...OK"
 	pushd binutils-2.32
-	mkdir -p build && cd build
-	if ../configure --prefix=/tools       	\
-             --with-sysroot=$LFS        \
-             --with-lib-path=/tools/lib \
-             --target=$LFS_TGT          \
-             --disable-nls              \
-             --disable-werror; then
-		info "Binutils configure ...OK"
-	else
-		error "Binutils configure ...failed"
-	fi
-	if make; then
-		info "Binutils make ...OK"
-	else
-		error "Binutils make ...failed"
-	fi
-	case $(uname -m) in
-  		x86_64) mkdir -p /tools/lib && ln -sv lib /tools/lib64 ;;
-	esac
-	make install	
+	{
+		mkdir -p build && cd build
+		if ../configure --prefix=/tools       	\
+				 --with-sysroot=$LFS        \
+				 --with-lib-path=/tools/lib \
+				 --target=$LFS_TGT          \
+				 --disable-nls              \
+				 --disable-werror; then
+			info "Binutils configure ...OK"
+		else
+			error "Binutils configure ...failed"
+		fi
+		if make; then
+			info "Binutils make ...OK"
+		else
+			error "Binutils make ...failed"
+		fi
+		case $(uname -m) in
+			x86_64) 
+				mkdir -p /tools/lib && ln -sv lib /tools/lib64 
+			;;
+		esac
+		make install	
+	}
 	popd
-
+	rm -rf binutils-2.32
 else
 	error "Extract binutils-2.32.tar.xz ...failed"
 fi 
+
+# 5.5. GCC-9.2.0 - Pass 1 
+if tar xf gcc-9.2.0.tar.xz; then
+	info "Extract gcc-9.2.0.tar.xz ...OK"
+	pushd gcc-9.2.0
+	{
+		tar -xf ../mpfr-4.0.2.tar.xz
+		mv mpfr-4.0.2 mpfr
+		tar -xf ../gmp-6.1.2.tar.xz
+		mv gmp-6.1.2 gmp
+		tar -xf ../mpc-1.1.0.tar.gz
+		mv mpc-1.1.0 mpc	
+
+		for file in gcc/config/{linux,i386/linux{,64}}.h; do
+			cp -uv $file{,.orig}
+			sed -E -i -e 's@/lib(64)?(32)?/ld@/tools&@g' \
+				  -e 's@/usr@/tools@g' $file
+
+			echo '
+#undef STANDARD_STARTFILE_PREFIX_1
+#undef STANDARD_STARTFILE_PREFIX_2
+#define STANDARD_STARTFILE_PREFIX_1 "/tools/lib/"
+#define STANDARD_STARTFILE_PREFIX_2 ""' >> $file
+  			touch $file.orig
+  		done
+
+		case $(uname -m) in
+			x86_64)
+				sed -e '/m64=/s/lib64/lib/' \
+					-i.orig gcc/config/i386/t-linux64
+			;;
+		esac
+
+		mkdir -p build && cd build
+		if ../configure                                       \
+			--target=$LFS_TGT                              \
+			--prefix=/tools                                \
+			--with-glibc-version=2.11                      \
+			--with-sysroot=$LFS                            \
+			--with-newlib                                  \
+			--without-headers                              \
+			--with-local-prefix=/tools                     \
+			--with-native-system-header-dir=/tools/include \
+			--disable-nls                                  \
+			--disable-shared                               \
+			--disable-multilib                             \
+			--disable-decimal-float                        \
+			--disable-threads                              \
+			--disable-libatomic                            \
+			--disable-libgomp                              \
+			--disable-libquadmath                          \
+			--disable-libssp                               \
+			--disable-libvtv                               \
+			--disable-libstdcxx                            \
+			--enable-languages=c,c++ ; then
+			info "GCC-9.2.0 configure ...OK"
+		else
+			error "GCC-9.2.0 configure ...failed"
+		fi
+		if make; then
+			info "GCC-9.2.0 make ...OK"
+		else
+			error "GCC-9.2.0 make ...failed"
+		fi
+		if make install; then
+			info "GCC-9.2.0 make install ...OK"
+		else
+			error "GCC-9.2.0 make install ...failed"
+		fi
+	}
+	popd
+	rm -rf gcc-9.2.0
+else
+	error "Extract gcc-9.2.0.tar.xz ...failed"
+fi
+
+# 5.6. Linux-5.2.8 API Headers 
+if tar xf linux-5.2.8.tar.xz; then
+	info "Extract Linux-5.2.8 ...OK"
+	pushd linux-5.2.8
+	{
+		make mrproper
+		make INSTALL_HDR_PATH=dest headers_install
+		cp -rfd dest/include/* /tools/include
+	}
+	popd
+	rm -rf linux-5.2.8
+else
+	error "Extract Linux-5.2.8 ...failed"
+fi
+
+# 5.7. Glibc-2.30
+if tar xf glibc-2.30.tar.xz; then
+	info "Extract Glibc-2.30 ...OK"
+	pushd glibc-2.30
+	{
+		mkdir -p build && cd build
+		if ../configure                          \
+			  --prefix=/tools                    \
+			  --host=$LFS_TGT                    \
+			  --build=$(../scripts/config.guess) \
+			  --enable-kernel=3.2                \
+			  --with-headers=/tools/include ; then
+			info "Glibc-2.30 configure ...OK"
+		else
+			error "Glibc-2.30 configure ...failed"
+		fi
+
+		if make; then
+			info "Glibc-2.30 make ...OK"
+		else
+			error "Glibc-2.30 make ...failed"
+		fi
+
+		if make install; then
+			info "Glibc-2.30 make install...OK"
+		else
+			error "Glibc-2.30 make install...failed"
+		fi
+	}
+	popd
+	rm -rf glibc-2.30
+else
+	error "Extract Glibc-2.30 ...failed"
+fi
+
+# 5.8. Libstdc++ from GCC-9.2.0 
+if tar xf gcc-9.2.0.tar.xz; then
+	info "Extract gcc-9.2.0.tar.xz ...OK"
+	pushd gcc-9.2.0
+	{
+		mkdir -p build && cd build
+		if ../libstdc++-v3/configure            \
+				--host=$LFS_TGT                 \
+				--prefix=/tools                 \
+				--disable-multilib              \
+				--disable-nls                   \
+				--disable-libstdcxx-threads     \
+				--disable-libstdcxx-pch         \
+				--with-gxx-include-dir=/tools/$LFS_TGT/include/c++/9.2.0 ; then
+			info "GCC-9.2.0 Libstdc++ configure ...OK"
+		else
+			error "GCC-9.2.0 Libstdc++ configure ...failed"
+		fi
+
+		if make; then
+			info "GCC-9.2.0 Libstdc++ make ...OK"
+		else
+			error "GCC-9.2.0 Libstdc++ make ...failed"
+		fi
+
+		if make install; then
+			info "GCC-9.2.0 Libstdc++ make install ...OK"
+		else
+			error "GCC-9.2.0 Libstdc++ make install ...failed"
+		fi
+	}
+	popd
+	rm -rf gcc-9.2.0
+else
+	error "Extract gcc-9.2.0.tar.xz ...failed"
+fi
+
 
 # 
 popd
